@@ -38,6 +38,7 @@ echo.
 echo   [1] 퀄리티: 상 (품질 90%%, 용량 다소 큼)
 echo   [2] 퀄리티: 중 (품질 80%%, 추천 권장)
 echo   [3] 퀄리티: 하 (품질 70%%, 용량 최적화)
+echo   [4] 직접 입력 (1~100 사이 숫자 입력)
 echo.
 echo   [0] 종료
 echo.
@@ -49,6 +50,10 @@ set "quality="
 if "%choice%"=="1" set "quality=high"
 if "%choice%"=="2" set "quality=mid"
 if "%choice%"=="3" set "quality=low"
+if "%choice%"=="4" (
+    set /p custom_q="원하는 퀄리티 숫자를 입력하세요 (1-100): "
+    set "quality=!custom_q!"
+)
 if "%choice%"=="0" exit
 
 if not defined quality (

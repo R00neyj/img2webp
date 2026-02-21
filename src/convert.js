@@ -19,15 +19,30 @@ if (!fs.existsSync(inputDir)) {
 }
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-// 퀄리티 설정 (기본값: 중)
+// 퀄리티 설정
 const qualityMap = {
     high: 90,
     mid: 80,
     low: 70,
 };
 
-const selectedQuality = process.argv[2] || "mid";
-const quality = qualityMap[selectedQuality] || 75;
+const arg2 = process.argv[2];
+let quality;
+let selectedQuality;
+
+if (!arg2) {
+    selectedQuality = "mid";
+    quality = qualityMap.mid;
+} else if (qualityMap[arg2]) {
+    selectedQuality = arg2;
+    quality = qualityMap[arg2];
+} else if (!isNaN(arg2)) {
+    quality = Math.min(Math.max(parseInt(arg2), 1), 100); // 1~100 사이로 제한
+    selectedQuality = `custom(${quality}%)`;
+} else {
+    selectedQuality = "mid";
+    quality = qualityMap.mid;
+}
 
 const supportedExtensions = [".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp"];
 
