@@ -13,9 +13,10 @@ const outputDir = path.join(rootDir, "output");
 
 // 퀄리티 맵 설정
 const qualityMap = {
-    1: { name: "상", value: 90, key: "high" },
-    2: { name: "중", value: 80, key: "mid" },
-    3: { name: "하", value: 70, key: "low" },
+    1: { name: "최상", value: 96, key: "ultra" },
+    2: { name: "상", value: 90, key: "high" },
+    3: { name: "중", value: 80, key: "mid" },
+    4: { name: "하", value: 70, key: "low" },
 };
 
 function ensureDirs() {
@@ -67,17 +68,18 @@ function showMenu() {
     console.log("  img2webp - 이미지 일괄 변환 (to WebP)");
     console.log("============================================");
     console.log("");
-    console.log("  [1] 퀄리티: 상 (90%)");
-    console.log("  [2] 퀄리티: 중 (80%) - 추천");
-    console.log("  [3] 퀄리티: 하 (70%)");
-    console.log("  [4] 직접 입력 (1~100 사이 숫자)");
+    console.log("  [1] 퀄리티: 최상 (96%)");
+    console.log("  [2] 퀄리티: 상   (90%)");
+    console.log("  [3] 퀄리티: 중   (80%) - 추천");
+    console.log("  [4] 퀄리티: 하   (70%)");
+    console.log("  [5] 직접 입력 (1~100 사이 숫자)");
     console.log("");
     console.log("  [0] 종료");
     console.log("");
     console.log("============================================");
 
-    rl.question("번호를 입력하세요 (기본값 2): ", async (answer) => {
-        const choice = answer.trim() || "2";
+    rl.question("번호를 입력하세요 (기본값 3): ", async (answer) => {
+        const choice = answer.trim() || "3";
 
         if (choice === "0") {
             console.log("프로그램을 종료합니다.");
@@ -88,7 +90,7 @@ function showMenu() {
         if (qualityMap[choice]) {
             await convertImages(qualityMap[choice].value, qualityMap[choice].name);
             rl.close();
-        } else if (choice === "4") {
+        } else if (choice === "5") {
             rl.question("\n원하는 퀄리티 숫자를 입력하세요 (1-100): ", async (customQ) => {
                 const q = parseInt(customQ);
                 if (isNaN(q) || q < 1 || q > 100) {
@@ -117,7 +119,8 @@ if (arg) {
     let q = 80;
     let label = "기본값";
 
-    if (arg === "high") { q = 90; label = "상"; }
+    if (arg === "ultra") { q = 96; label = "최상"; }
+    else if (arg === "high") { q = 90; label = "상"; }
     else if (arg === "mid") { q = 80; label = "중"; }
     else if (arg === "low") { q = 70; label = "하"; }
     else if (!isNaN(arg)) { q = parseInt(arg); label = "인자입력"; }
