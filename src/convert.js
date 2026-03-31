@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
-import readline from "readline/promises";
+import readline from "readline";
+import readlinePromises from "readline/promises";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,14 +11,6 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const inputDir = path.join(rootDir, "input");
 const outputDir = path.join(rootDir, "output");
-
-// 퀄리티 프리셋 설정
-const qualityPresets = {
-    1: { name: "최상", value: 96, key: "ultra" },
-    2: { name: "상", value: 90, key: "high" },
-    3: { name: "중", value: 80, key: "mid" },
-    4: { name: "하", value: 70, key: "low" },
-};
 
 function ensureDirs() {
     if (!fs.existsSync(inputDir)) fs.mkdirSync(inputDir, { recursive: true });
@@ -74,55 +67,99 @@ async function processBatch(files, quality, label) {
 }
 
 async function showMenu() {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-    });
+    const menuItems = [
+        { label: "퀄리티: 최상 (96%)", value: 96, name: "최상" },
+        { label: "퀄리티: 상   (90%)", value: 90, name: "상" },
+        { label: "퀄리티: 중   (80%) - 추천", value: 80, name: "중" },
+        { label: "퀄리티: 하   (70%)", value: 70, name: "하" },
+        { label: "직접 입력 (1~100)", value: "custom" },
+        { label: "종료", value: "exit" },
+    ];
+
+    let selectedIndex = 2; // 기본값: 중 (80%)
+
+    // 키프레스 이벤트 초기화 (한 번만 실행하면 됨)
+    readline.emitKeypressEvents(process.stdin);
 
     while (true) {
-        console.log("============================================");
-        console.log("  img2webp - 이미지 일괄 변환 (to WebP)");
-        console.log("============================================");
-        console.log("");
-        console.log("  [1] 퀄리티: 최상 (96%)");
-        console.log("  [2] 퀄리티: 상   (90%)");
-        console.log("  [3] 퀄리티: 중   (80%) - 추천");
-        console.log("  [4] 퀄리티: 하   (70%)");
-        console.log("  [5] 직접 입력 (1~100 사이 숫자)");
-        console.log("");
-        console.log("  [0] 종료");
-        console.log("");
-        console.log("============================================");
+        const renderMenu = () => {
+            console.clear();
+            console.log("============================================");
+            console.log("  img2webp - 이미지 일괄 변환 (방향키로 선택)");
+            console.log("============================================");
+            console.log("");
 
-        const answer = await rl.question("선택하세요 (기본값 3): ");
-        const choice = answer.trim() || "3";
+            menuItems.forEach((item, index) => {
+                const prefix = index === selectedIndex ? " > " : "   ";
+                const line = `${prefix}${item.label}`;
+                if (index === selectedIndex) {
+                    console.log(`\x1b[36m${line}\x1b[0m`);
+                } else {
+                    console.log(line);
+                }
+            });
 
-        if (choice === "0") {
+            console.log("");
+            console.log("============================================");
+            console.log(" (↑/↓: 이동, Enter: 선택, Ctrl+C: 종료)");
+        };
+
+        if (process.stdin.isTTY) process.stdin.setRawMode(true);
+        renderMenu();
+
+        const selected = await new Promise((resolve) => {
+            const onKeypress = (str, key) => {
+                if (key.ctrl && key.name === "c") {
+                    process.exit();
+                }
+
+                if (key.name === "up") {
+                    selectedIndex = (selectedIndex - 1 + menuItems.length) % menuItems.length;
+                    renderMenu();
+                } else if (key.name === "down") {
+                    selectedIndex = (selectedIndex + 1) % menuItems.length;
+                    renderMenu();
+                } else if (key.name === "return") {
+                    process.stdin.removeListener("keypress", onKeypress);
+                    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+                    resolve(menuItems[selectedIndex]);
+                }
+            };
+            process.stdin.on("keypress", onKeypress);
+        });
+
+        if (selected.value === "exit") {
             console.log("프로그램을 종료합니다.");
             break;
         }
 
-        if (qualityPresets[choice]) {
-            const files = fs.readdirSync(inputDir);
-            await processBatch(files, qualityPresets[choice].value, qualityPresets[choice].name);
-        } else if (choice === "5") {
+        if (selected.value === "custom") {
+            const rl = readlinePromises.createInterface({
+                input: process.stdin,
+                output: process.stdout,
+            });
             const customQ = await rl.question("\n원하는 퀄리티 숫자를 입력하세요 (1-100): ");
             const q = parseInt(customQ);
+            rl.close();
+
             if (isNaN(q) || q < 1 || q > 100) {
                 console.log("\n[!] 1에서 100 사이의 올바른 숫자를 입력해 주세요.\n");
             } else {
                 const files = fs.readdirSync(inputDir);
-                await processBatch(files, q, `직접설정`);
+                await processBatch(files, q, "직접설정");
             }
         } else {
-            console.log("\n[!] 잘못된 선택입니다. 다시 입력해 주세요.\n");
+            const files = fs.readdirSync(inputDir);
+            await processBatch(files, selected.value, selected.name);
         }
-        
-        await rl.question("엔터 키를 눌러 메뉴로 돌아갑니다...");
-        console.clear();
-    }
 
-    rl.close();
+        const rlFinal = readlinePromises.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+        await rlFinal.question("엔터 키를 눌러 메뉴로 돌아갑니다...");
+        rlFinal.close();
+    }
 }
 
 /**

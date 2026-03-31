@@ -1,6 +1,6 @@
 {
   "name": "img2webp",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "Image to WebP batch converter",
   "main": "convert.js",
