@@ -17,6 +17,35 @@ function ensureDirs() {
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 }
 
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+}
+
+function getTotalInputSize() {
+    const supportedExtensions = [".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp"];
+    const statsMap = { png: 0, jpg: 0, etc: 0, total: 0 };
+
+    if (!fs.existsSync(inputDir)) return statsMap;
+
+    const files = fs.readdirSync(inputDir);
+    files.forEach((file) => {
+        const ext = path.extname(file).toLowerCase();
+        if (supportedExtensions.includes(ext)) {
+            const size = fs.statSync(path.join(inputDir, file)).size;
+            statsMap.total += size;
+            if (ext === ".png") statsMap.png += size;
+            else if (ext === ".jpg" || ext === ".jpeg") statsMap.jpg += size;
+            else statsMap.etc += size;
+        }
+    });
+    return statsMap;
+}
+
 /**
  * 이미지들을 병렬 처리(배치 단위)로 변환
  */
@@ -29,7 +58,7 @@ async function processBatch(files, quality, label) {
         return;
     }
 
-    const finalQuality = Math.min(Math.max(parseInt(quality) || 80, 1), 100);
+    const finalQuality = Math.min(Math.max(parseInt(quality) || 90, 1), 100);
     console.log(`\n[START] 퀄리티: ${label} (${finalQuality}%)로 변환을 시작합니다 (총 ${imageFiles.length}개)...`);
 
     const stats = { success: 0, fail: 0 };
@@ -68,15 +97,39 @@ async function processBatch(files, quality, label) {
 
 async function showMenu() {
     const menuItems = [
-        { label: "퀄리티: 최상 (96%)", value: 96, name: "최상" },
-        { label: "퀄리티: 상   (90%)", value: 90, name: "상" },
-        { label: "퀄리티: 중   (80%) - 추천", value: 80, name: "중" },
-        { label: "퀄리티: 하   (70%)", value: 70, name: "하" },
+        { label: "퀄리티: 최상 (100%)", value: 100, name: "최상" },
+        { label: "퀄리티: 상   (96%)", value: 96, name: "상" },
+        { label: "퀄리티: 중   (90%) - 추천", value: 90, name: "중" },
+        { label: "퀄리티: 하   (80%)", value: 80, name: "하" },
         { label: "직접 입력 (1~100)", value: "custom" },
         { label: "종료", value: "exit" },
     ];
 
-    let selectedIndex = 2; // 기본값: 중 (80%)
+    let selectedIndex = 2; // 기본값: 중 (90%)
+    const stats = getTotalInputSize();
+    
+    // 실제 압축률 측정을 위한 캘리브레이션
+    const factors = { 100: 0.6, 96: 0.45, 90: 0.35, 80: 0.25 }; // 기본값
+    
+    if (stats.total > 0) {
+        const supportedExtensions = [".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp"];
+        const files = fs.readdirSync(inputDir);
+        const sampleFile = files.find(f => supportedExtensions.includes(path.extname(f).toLowerCase()));
+        
+        if (sampleFile) {
+            const inputPath = path.join(inputDir, sampleFile);
+            const inputSize = fs.statSync(inputPath).size;
+            
+            for (const q of [100, 96, 90, 80]) {
+                try {
+                    const buffer = await sharp(inputPath).webp({ quality: q, effort: 4 }).toBuffer();
+                    factors[q] = buffer.length / inputSize;
+                } catch (e) {
+                    // 실패 시 기본값 유지
+                }
+            }
+        }
+    }
 
     // 키프레스 이벤트 초기화 (한 번만 실행하면 됨)
     readline.emitKeypressEvents(process.stdin);
@@ -100,6 +153,25 @@ async function showMenu() {
             });
 
             console.log("");
+            console.log("============================================");
+            
+            const selectedItem = menuItems[selectedIndex];
+            if (typeof selectedItem.value === "number" && stats.total > 0) {
+                const currentFactor = factors[selectedItem.value] || 0.5;
+                const estSize = stats.total * currentFactor;
+                const diffPercent = Math.round((1 - currentFactor) * 100);
+                
+                if (diffPercent >= 0) {
+                    console.log(` [계산] ${formatBytes(stats.total)} -> \x1b[32m${formatBytes(estSize)}\x1b[0m (\x1b[32m약 ${diffPercent}% 절약\x1b[0m)`);
+                } else {
+                    console.log(` [계산] ${formatBytes(stats.total)} -> \x1b[31m${formatBytes(estSize)}\x1b[0m (\x1b[31m약 ${Math.abs(diffPercent)}% 용량 증가\x1b[0m)`);
+                }
+            } else if (stats.total === 0) {
+                console.log(" [!] input 폴더가 비어 있습니다.");
+            } else {
+                console.log(""); // 공백 유지
+            }
+
             console.log("============================================");
             console.log(" (↑/↓: 이동, Enter: 선택, Ctrl+C: 종료)");
         };
@@ -129,8 +201,8 @@ async function showMenu() {
         });
 
         if (selected.value === "exit") {
-            console.log("프로그램을 종료합니다.");
-            break;
+            console.log("\n프로그램을 종료합니다.");
+            process.exit(0);
         }
 
         if (selected.value === "custom") {
@@ -157,8 +229,9 @@ async function showMenu() {
             input: process.stdin,
             output: process.stdout,
         });
-        await rlFinal.question("엔터 키를 눌러 메뉴로 돌아갑니다...");
+        await rlFinal.question("엔터 키를 눌러 종료합니다...");
         rlFinal.close();
+        process.exit(0);
     }
 }
 
@@ -166,13 +239,13 @@ async function showMenu() {
  * 인자 기반 즉시 실행
  */
 async function runWithArgs(arg) {
-    let q = 80;
+    let q = 90;
     let label = "기본값";
 
-    if (arg === "ultra") { q = 96; label = "최상"; }
-    else if (arg === "high") { q = 90; label = "상"; }
-    else if (arg === "mid") { q = 80; label = "중"; }
-    else if (arg === "low") { q = 70; label = "하"; }
+    if (arg === "ultra") { q = 100; label = "최상"; }
+    else if (arg === "high") { q = 96; label = "상"; }
+    else if (arg === "mid") { q = 90; label = "중"; }
+    else if (arg === "low") { q = 80; label = "하"; }
     else if (!isNaN(arg)) { q = parseInt(arg); label = "인자입력"; }
 
     const files = fs.readdirSync(inputDir);
@@ -184,7 +257,7 @@ ensureDirs();
 const arg = process.argv[2];
 
 if (arg) {
-    runWithArgs(arg);
+    await runWithArgs(arg);
 } else {
-    showMenu();
+    await showMenu();
 }
