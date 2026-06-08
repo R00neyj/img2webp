@@ -26,13 +26,30 @@ function formatBytes(bytes, decimals = 2) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 }
 
+function getAllFiles(dirPath, originalDirPath = dirPath) {
+    let results = [];
+    if (!fs.existsSync(dirPath)) return results;
+    
+    const list = fs.readdirSync(dirPath);
+    list.forEach((file) => {
+        const fullPath = path.join(dirPath, file);
+        const stat = fs.statSync(fullPath);
+        if (stat && stat.isDirectory()) {
+            results = results.concat(getAllFiles(fullPath, originalDirPath));
+        } else {
+            results.push(path.relative(originalDirPath, fullPath));
+        }
+    });
+    return results;
+}
+
 function getTotalInputSize() {
     const supportedExtensions = [".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp"];
     const statsMap = { png: 0, jpg: 0, etc: 0, total: 0 };
 
     if (!fs.existsSync(inputDir)) return statsMap;
 
-    const files = fs.readdirSync(inputDir);
+    const files = getAllFiles(inputDir);
     files.forEach((file) => {
         const ext = path.extname(file).toLowerCase();
         if (supportedExtensions.includes(ext)) {
@@ -68,14 +85,22 @@ async function processBatch(files, quality, label) {
         const batch = imageFiles.slice(i, i + batchSize);
         const promises = batch.map(async (file) => {
             const inputPath = path.join(inputDir, file);
-            const outputName = path.parse(file).name + ".webp";
-            const outputPath = path.join(outputDir, outputName);
+            const parsed = path.parse(file);
+            const outputRelDir = parsed.dir;
+            const outputName = parsed.name + ".webp";
+            const targetOutputDir = path.join(outputDir, outputRelDir);
+
+            if (!fs.existsSync(targetOutputDir)) {
+                fs.mkdirSync(targetOutputDir, { recursive: true });
+            }
+
+            const outputPath = path.join(targetOutputDir, outputName);
 
             try {
                 await sharp(inputPath)
                     .webp({ quality: finalQuality, effort: 4 })
                     .toFile(outputPath);
-                console.log(` [+] OK: ${file} -> ${outputName}`);
+                console.log(` [+] OK: ${file} -> ${path.join(outputRelDir, outputName)}`);
                 stats.success++;
             } catch (err) {
                 console.error(` [-] ERR: ${file} 변환 실패 - ${err.message}`);
@@ -113,7 +138,7 @@ async function showMenu() {
     
     if (stats.total > 0) {
         const supportedExtensions = [".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp"];
-        const files = fs.readdirSync(inputDir);
+        const files = getAllFiles(inputDir);
         const sampleFile = files.find(f => supportedExtensions.includes(path.extname(f).toLowerCase()));
         
         if (sampleFile) {
@@ -217,11 +242,11 @@ async function showMenu() {
             if (isNaN(q) || q < 1 || q > 100) {
                 console.log("\n[!] 1에서 100 사이의 올바른 숫자를 입력해 주세요.\n");
             } else {
-                const files = fs.readdirSync(inputDir);
+                const files = getAllFiles(inputDir);
                 await processBatch(files, q, "직접설정");
             }
         } else {
-            const files = fs.readdirSync(inputDir);
+            const files = getAllFiles(inputDir);
             await processBatch(files, selected.value, selected.name);
         }
 
@@ -248,7 +273,7 @@ async function runWithArgs(arg) {
     else if (arg === "low") { q = 80; label = "하"; }
     else if (!isNaN(arg)) { q = parseInt(arg); label = "인자입력"; }
 
-    const files = fs.readdirSync(inputDir);
+    const files = getAllFiles(inputDir);
     await processBatch(files, q, label);
 }
 
